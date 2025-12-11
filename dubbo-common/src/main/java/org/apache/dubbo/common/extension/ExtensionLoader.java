@@ -277,11 +277,20 @@ public class ExtensionLoader<T> {
      * @return extension list which are activated
      * @see org.apache.dubbo.common.extension.Activate
      */
+
+    /**
+     *举个例子: "test:localhost?log=D,F,default,A"
+     *实现类有[A,B,C,D,E,F] 用户url上配置的是[D,F,default,A]
+     *第一个循环会找出default对应的值有哪些：[B,C,E]
+     *第二个循环会遍历用户配置的，依次加入D->F->[B->C->E] ->A
+     */
     public List<T> getActivateExtension(URL url, String[] values, String group) {
         List<T> activateExtensions = new ArrayList<>();
         List<String> names = values == null ? new ArrayList<>(0) : asList(values);
         if (!names.contains(REMOVE_VALUE_PREFIX + DEFAULT_KEY)) {
             getExtensionClasses();
+
+            //找到默认激活的配置有哪些
             for (Map.Entry<String, Object> entry : cachedActivates.entrySet()) {
                 String name = entry.getKey();
                 Object activate = entry.getValue();
@@ -297,6 +306,7 @@ public class ExtensionLoader<T> {
                 } else {
                     continue;
                 }
+                //当前group 匹配 && 不是用户指定加载的 && 不是用户指定过滤的 && 是激活的
                 if (isMatchGroup(group, activateGroup)
                         && !names.contains(name)
                         && !names.contains(REMOVE_VALUE_PREFIX + name)
@@ -306,6 +316,8 @@ public class ExtensionLoader<T> {
             }
             activateExtensions.sort(ActivateComparator.COMPARATOR);
         }
+
+
         List<T> loadedExtensions = new ArrayList<>();
         for (int i = 0; i < names.size(); i++) {
             String name = names.get(i);
@@ -652,6 +664,7 @@ public class ExtensionLoader<T> {
 
     /**
      * 根据类扩展名创建扩展实例
+     *
      * @param name eg:  con.test.MyLog
      * @return
      */
@@ -941,8 +954,10 @@ public class ExtensionLoader<T> {
         } else if (isWrapperClass(clazz)) {
             cacheWrapperClass(clazz);
         } else {
+            //扩展实现类必须有无参构造器
             clazz.getConstructor();
             if (StringUtils.isEmpty(name)) {
+                //是不是自定义了bean的name
                 name = findAnnotationName(clazz);
                 if (name.length() == 0) {
                     throw new IllegalStateException("No such extension name for the class " + clazz.getName() + " in the config " + resourceURL);
@@ -951,9 +966,12 @@ public class ExtensionLoader<T> {
 
             String[] names = NAME_SEPARATOR.split(name);
             if (ArrayUtils.isNotEmpty(names)) {
+                //将包含@Activate注解的实现类缓存到cachedActivates集合中
                 cacheActivateClass(clazz, names[0]);
                 for (String n : names) {
+                    // 在cachedNames集合中缓存实现类->扩展名的映射
                     cacheName(clazz, n);
+                    // 在cachedClasses集合中缓存扩展名->实现类的映射
                     saveInExtensionClass(extensionClasses, clazz, n, overridden);
                 }
             }
@@ -1062,6 +1080,7 @@ public class ExtensionLoader<T> {
 
     /**
      * 创建该扩展类的适配类的实例
+     *
      * @return
      */
     @SuppressWarnings("unchecked")

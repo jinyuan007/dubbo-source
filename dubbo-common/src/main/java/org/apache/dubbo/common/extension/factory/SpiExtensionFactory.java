@@ -20,16 +20,24 @@ import org.apache.dubbo.common.extension.ExtensionFactory;
 import org.apache.dubbo.common.extension.ExtensionLoader;
 import org.apache.dubbo.common.extension.SPI;
 
+
 /**
  * SpiExtensionFactory
+ */
+
+/**
+ * 根据被注入的属性的class类注入
  */
 public class SpiExtensionFactory implements ExtensionFactory {
 
     @Override
     public <T> T getExtension(Class<T> type, String name) {
+        //只有属性是一个接口并且接口实现了SPI才会自动装配
         if (type.isInterface() && type.isAnnotationPresent(SPI.class)) {
+            //从ExtensionLoader获取所有SPI接口对应的扩展实例加载类
             ExtensionLoader<T> loader = ExtensionLoader.getExtensionLoader(type);
             if (!loader.getSupportedExtensions().isEmpty()) {
+                //获取对应的适配类
                 return loader.getAdaptiveExtension();
             }
         }

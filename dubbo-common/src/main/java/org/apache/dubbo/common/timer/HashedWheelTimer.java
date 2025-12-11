@@ -236,6 +236,7 @@ public class HashedWheelTimer implements Timer {
         }
 
         // Normalize ticksPerWheel to power of two and initialize the wheel.
+        //创建卡槽对应的列表
         wheel = createWheel(ticksPerWheel);
         mask = wheel.length - 1;
 
@@ -248,6 +249,7 @@ public class HashedWheelTimer implements Timer {
                     "tickDuration: %d (expected: 0 < tickDuration in nanos < %d",
                     tickDuration, Long.MAX_VALUE / wheel.length));
         }
+        //启动底层调用的work
         workerThread = threadFactory.newThread(worker);
 
         this.maxPendingTimeouts = maxPendingTimeouts;
@@ -439,14 +441,20 @@ public class HashedWheelTimer implements Timer {
             startTimeInitialized.countDown();
 
             do {
+                //计算并且wait等待下一个指针跳动的时候
                 final long deadline = waitForNextTick();
                 if (deadline > 0) {
+                    //计算指针应该落在哪个卡槽上，类似于 tick % wheelSize
                     int idx = (int) (tick & mask);
+                    //首先处理 取消任务缓冲队列中的任务
                     processCancelledTasks();
-                    HashedWheelBucket bucket =
-                            wheel[idx];
+                    //获取到对应的卡槽
+                    HashedWheelBucket bucket = wheel[idx];
+                    //添加任务的缓冲队列放入卡槽的链表上，内部需要计算这个任务要放到哪个卡槽
                     transferTimeoutsToBuckets();
+                    //调度该卡槽
                     bucket.expireTimeouts(deadline);
+                    //指针 +1
                     tick++;
                 }
             } while (WORKER_STATE_UPDATER.get(HashedWheelTimer.this) == WORKER_STATE_STARTED);
@@ -715,14 +723,25 @@ public class HashedWheelTimer implements Timer {
         /**
          * Expire all {@link HashedWheelTimeout}s for the given {@code deadline}.
          */
+
+        /**
+         * 时间轮准到某一个卡槽（Bucket）,就会调用对应的这个方法去执行卡槽上双向链表的任务
+         *
+         */
         void expireTimeouts(long deadline) {
             HashedWheelTimeout timeout = head;
 
             // process all timeouts
+            //链表遍历
             while (timeout != null) {
                 HashedWheelTimeout next = timeout.next;
+                //判断当前任务是不是还需要继续转圈：由于一个轮只能表示特定的长度，例如60s，如果一个任务需要延迟130秒执行
+                //那么他的remainingRounds应该是2，然后位于10这个卡槽
                 if (timeout.remainingRounds <= 0) {
+                    //如果不需要再等待继续转圈，就可以先移除等待执行
                     next = remove(timeout);
+                    //再次判断这个任务的执行时间是不是< 当前时间.理论上不会出现不小于的情况
+                    //因为一个任务再创建时会计算对应的slot+remainingRounds,这个slot上的任务一定是小于这个时间能执行的
                     if (timeout.deadline <= deadline) {
                         timeout.expire();
                     } else {
@@ -731,8 +750,10 @@ public class HashedWheelTimer implements Timer {
                                 "timeout.deadline (%d) > deadline (%d)", timeout.deadline, deadline));
                     }
                 } else if (timeout.isCancelled()) {
+                    //被取消的任务就直接移除
                     next = remove(timeout);
                 } else {
+                    //还需要再转圈的任务 圈数-1
                     timeout.remainingRounds--;
                 }
                 timeout = next;
